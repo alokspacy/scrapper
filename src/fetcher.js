@@ -3,6 +3,15 @@ const path = require('path');
 
 const DEFAULT_USER_AGENT = 'ThePoliteScraper/1.0 (Public Practice Sandbox; +https://books.toscrape.com/)';
 const DEFAULT_TIMEOUT_MS = 10000;
+const POLITENESS_DELAY_MS = 500;
+
+/**
+ * Helper to pause execution for a given number of milliseconds.
+ *
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise<void>}
+ */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Reusable HTTP fetcher for HTML pages with custom User-Agent and timeout handling.
@@ -61,9 +70,47 @@ async function saveToCache(filePath, content) {
   await fs.writeFile(filePath, content, 'utf-8');
 }
 
+/**
+ * Returns cached HTML if present; otherwise applies politeness delay, fetches live HTML, and caches it.
+ *
+ * @param {string} url - Target URL to fetch
+ * @param {number} pageNum - Catalogue page number (used for cache filename)
+ * @param {object} [options] - Options (delayMs)
+ * @returns {Promise<{ html: string, fromCache: boolean, cachePath: string }>}
+ */
+async function getCachedOrFetchPage(url, pageNum, options = {}) {
+  const cachePath = path.resolve(`cache/catalogue-page-${pageNum}.html`);
+  const delayMs = options.delayMs !== undefined ? options.delayMs : POLITENESS_DELAY_MS;
+
+  try {
+    const cachedHtml = await fs.readFile(cachePath, 'utf-8');
+    return {
+      html: cachedHtml,
+      fromCache: true,
+      cachePath,
+    };
+  } catch (err) {
+    // Cache miss - fetch live page with politeness delay if needed
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
+    const result = await fetchPage(url, options);
+    await saveToCache(cachePath, result.html);
+
+    return {
+      html: result.html,
+      fromCache: false,
+      cachePath,
+    };
+  }
+}
+
 module.exports = {
   fetchPage,
   saveToCache,
+  getCachedOrFetchPage,
+  sleep,
   DEFAULT_USER_AGENT,
   DEFAULT_TIMEOUT_MS,
+  POLITENESS_DELAY_MS,
 };

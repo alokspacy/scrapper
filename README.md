@@ -49,7 +49,32 @@ Stage 1 implements a modular, reusable HTTP fetcher (`src/fetcher.js`) that:
 - **Cached HTML Storage Path**: `cache/catalogue-page-1.html`
 - **Raw HTML Cache Confirmation**: Confirmed. `cache/catalogue-page-1.html` exists and contains 51,294 bytes (50.09 KB) of raw HTML.
 
-### How to Run the Scraper
+---
+
+## Stage 2 Documentation
+
+### Catalogue Discovery Details
+Stage 2 implements dynamic catalogue page discovery (`src/parser.js` and `src/index.js`):
+1. **HTML Parsing via Cheerio**: Each catalogue page is parsed with Cheerio to extract book detail links from `article.product_pod h3 a`.
+2. **Dynamic Pagination via Next Link**: The scraper dynamically follows the target site's own `<li class="next"><a href="...">` link to navigate from page to page (Page 1 -> Page 2 -> Page 3). No book or page URLs are hardcoded.
+3. **URL Normalization**: All relative links are converted to absolute HTTPS URLs using the WHATWG `URL` API (`new URL(href, currentUrl).href`), eliminating duplicate or relative path ambiguities.
+4. **Caching & Politeness Delay**:
+   - Cached pages (`cache/catalogue-page-1.html`, `cache/catalogue-page-2.html`, `cache/catalogue-page-3.html`) read directly from disk.
+   - Any live HTTP request enforces a minimum politeness delay of 500 ms before dispatching.
+
+### Stage 2 Checkpoint Result
+```text
+catalogue_pages=3
+discovered=60
+unique_urls=60
+```
+- **Catalogue Pages Processed**: 3
+- **Total Book URLs Discovered**: 60
+- **Unique Book URLs**: 60
+
+---
+
+## How to Run the Scraper
 Run the scraper using:
 ```bash
 npm start
