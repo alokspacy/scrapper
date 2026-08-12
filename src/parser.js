@@ -11,7 +11,6 @@ function parseCataloguePage(html, baseUrl) {
   const $ = cheerio.load(html);
   const bookUrls = [];
 
-  // Extract all book detail page links from article.product_pod
   $('article.product_pod h3 a').each((_, element) => {
     const href = $(element).attr('href');
     if (href) {
@@ -20,7 +19,6 @@ function parseCataloguePage(html, baseUrl) {
     }
   });
 
-  // Extract next page relative link if available (e.g. <li class="next"><a href="...">)
   const nextHref = $('li.next a, .pager .next a').attr('href');
   const nextUrl = nextHref ? new URL(nextHref, baseUrl).href : null;
 
@@ -30,6 +28,47 @@ function parseCataloguePage(html, baseUrl) {
   };
 }
 
+/**
+ * Parses a book detail page HTML to extract required book fields.
+ *
+ * @param {string} html - Raw detail page HTML
+ * @param {string} productUrl - Absolute URL of the book product page
+ * @param {string} sourcePage - Catalogue page URL where link was discovered
+ * @param {string} fetchedAt - Timestamp ISO string when page was fetched
+ * @returns {object} Extracted book details with 8 exact keys
+ */
+function parseBookDetailPage(html, productUrl, sourcePage, fetchedAt) {
+  const $ = cheerio.load(html);
+
+  const title = $('div.product_main h1').text().trim();
+  const price_text = $('div.product_main p.price_color').text().trim();
+
+  // Availability text: collapse redundant whitespace/newlines
+  const rawAvailability = $('div.product_main p.instock.availability').text().trim();
+  const availability_text = rawAvailability.replace(/\s+/g, ' ');
+
+  // Rating class string: e.g. "star-rating Three" -> "Three"
+  const ratingClass = $('div.product_main p.star-rating').attr('class') || '';
+  const rating_text = ratingClass.replace('star-rating', '').trim();
+
+  // Description: element directly after #product_description
+  const descEl = $('#product_description').next('p');
+  const descriptionText = descEl.length > 0 ? descEl.text().trim() : null;
+  const description = descriptionText ? descriptionText : null;
+
+  return {
+    title,
+    product_url: productUrl,
+    price_text,
+    availability_text,
+    rating_text,
+    description,
+    source_page: sourcePage,
+    fetched_at: fetchedAt,
+  };
+}
+
 module.exports = {
   parseCataloguePage,
+  parseBookDetailPage,
 };

@@ -74,6 +74,45 @@ unique_urls=60
 
 ---
 
+## Stage 3 Documentation
+
+### Detail Page Extraction Details
+Stage 3 implements detail page fetching and field extraction (`src/parser.js` and `src/index.js`):
+1. **Detail Page Caching & Politeness**: All 60 discovered book detail pages are cached locally under `cache/book-detail-1.html` through `cache/book-detail-60.html`. Requests enforce a minimum 500 ms delay for live requests and reuse cached HTML on subsequent runs.
+2. **Field Extraction**: Extracts exactly 8 fields per book using Cheerio:
+   - `title`: Extracted raw from `div.product_main h1`.
+   - `product_url`: Absolute product URL.
+   - `price_text`: Extracted raw from `div.product_main p.price_color`.
+   - `availability_text`: Extracted raw from `div.product_main p.instock.availability`.
+   - `rating_text`: Extracted raw rating class name (e.g. `"Three"`).
+   - `description`: Text from `#product_description + p` (or `null` if missing).
+   - `source_page`: Catalogue URL where book was discovered.
+   - `fetched_at`: ISO timestamp of when the page was fetched or cached.
+3. **Data Integrity & Validation**: Every extracted record is validated to ensure all 8 keys exist with no invented data.
+
+### Stage 3 Checkpoint Result
+```text
+detail_pages=60
+records_validated=60
+cached_pages_reused=60
+```
+
+### Sample Extracted Record
+```json
+{
+  "title": "A Light in the Attic",
+  "product_url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  "price_text": "£51.77",
+  "availability_text": "In stock (22 available)",
+  "rating_text": "Three",
+  "description": "It's a Selection of Poems and Drawings By Shel Silverstein. It covers various topics from funny to dark. It has 176 pages and was published in 1981.",
+  "source_page": "https://books.toscrape.com/",
+  "fetched_at": "2026-08-12T07:04:36.439Z"
+}
+```
+
+---
+
 ## How to Run the Scraper
 Run the scraper using:
 ```bash

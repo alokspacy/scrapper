@@ -74,26 +74,28 @@ async function saveToCache(filePath, content) {
  * Returns cached HTML if present; otherwise applies politeness delay, fetches live HTML, and caches it.
  *
  * @param {string} url - Target URL to fetch
- * @param {number} pageNum - Catalogue page number (used for cache filename)
+ * @param {string} cacheKey - Cache identifier/filename key (without .html)
  * @param {object} [options] - Options (delayMs)
- * @returns {Promise<{ html: string, fromCache: boolean, cachePath: string }>}
+ * @returns {Promise<{ html: string, fromCache: boolean, cachePath: string, fetchedAt: string }>}
  */
-async function getCachedOrFetchPage(url, pageNum, options = {}) {
-  const cachePath = path.resolve(`cache/catalogue-page-${pageNum}.html`);
+async function getCachedOrFetchPage(url, cacheKey, options = {}) {
+  const cachePath = path.resolve(`cache/${cacheKey}.html`);
   const delayMs = options.delayMs !== undefined ? options.delayMs : POLITENESS_DELAY_MS;
 
   try {
     const cachedHtml = await fs.readFile(cachePath, 'utf-8');
+    const stat = await fs.stat(cachePath);
     return {
       html: cachedHtml,
       fromCache: true,
       cachePath,
+      fetchedAt: stat.mtime.toISOString(),
     };
   } catch (err) {
-    // Cache miss - fetch live page with politeness delay if needed
     if (delayMs > 0) {
       await sleep(delayMs);
     }
+    const fetchedAt = new Date().toISOString();
     const result = await fetchPage(url, options);
     await saveToCache(cachePath, result.html);
 
@@ -101,6 +103,7 @@ async function getCachedOrFetchPage(url, pageNum, options = {}) {
       html: result.html,
       fromCache: false,
       cachePath,
+      fetchedAt,
     };
   }
 }
