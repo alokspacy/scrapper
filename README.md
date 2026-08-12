@@ -68,9 +68,6 @@ catalogue_pages=3
 discovered=60
 unique_urls=60
 ```
-- **Catalogue Pages Processed**: 3
-- **Total Book URLs Discovered**: 60
-- **Unique Book URLs**: 60
 
 ---
 
@@ -80,15 +77,7 @@ unique_urls=60
 Stage 3 implements detail page fetching and field extraction (`src/parser.js` and `src/index.js`):
 1. **Detail Page Caching & Politeness**: All 60 discovered book detail pages are cached locally under `cache/book-detail-1.html` through `cache/book-detail-60.html`. Requests enforce a minimum 500 ms delay for live requests and reuse cached HTML on subsequent runs.
 2. **Field Extraction**: Extracts exactly 8 fields per book using Cheerio:
-   - `title`: Extracted raw from `div.product_main h1`.
-   - `product_url`: Absolute product URL.
-   - `price_text`: Extracted raw from `div.product_main p.price_color`.
-   - `availability_text`: Extracted raw from `div.product_main p.instock.availability`.
-   - `rating_text`: Extracted raw rating class name (e.g. `"Three"`).
-   - `description`: Text from `#product_description + p` (or `null` if missing).
-   - `source_page`: Catalogue URL where book was discovered.
-   - `fetched_at`: ISO timestamp of when the page was fetched or cached.
-3. **Data Integrity & Validation**: Every extracted record is validated to ensure all 8 keys exist with no invented data.
+   - `title`, `product_url`, `price_text`, `availability_text`, `rating_text`, `description`, `source_page`, `fetched_at`.
 
 ### Stage 3 Checkpoint Result
 ```text
@@ -97,18 +86,47 @@ records_validated=60
 cached_pages_reused=60
 ```
 
-### Sample Extracted Record
-```json
-{
-  "title": "A Light in the Attic",
-  "product_url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
-  "price_text": "£51.77",
-  "availability_text": "In stock (22 available)",
-  "rating_text": "Three",
-  "description": "It's a Selection of Poems and Drawings By Shel Silverstein. It covers various topics from funny to dark. It has 176 pages and was published in 1981.",
-  "source_page": "https://books.toscrape.com/",
-  "fetched_at": "2026-08-12T07:04:36.439Z"
-}
+---
+
+## Stage 4 Documentation
+
+### Final Record Schema & Zod Validation
+Stage 4 defines strict schema validation using Zod (`src/schema.js`):
+
+```typescript
+const BookSchema = z.object({
+  title: z.string().min(1),
+  product_url: z.string().url().refine(val => val.startsWith('https://')),
+  price_text: z.string().min(1),
+  price_gbp: z.number().positive(),
+  availability_text: z.string().min(1),
+  rating_text: z.string().min(1),
+  description: z.string().nullable(),
+  source_page: z.string().url().refine(val => val.startsWith('https://')),
+  fetched_at: z.string().min(1)
+});
+```
+
+### Normalization Rules
+1. **Price Normalization**: Parses `price_text` (e.g., `"£51.77"`) to extract numeric float `price_gbp` (`51.77`).
+2. **Raw Preservations**: Keeps original `price_text`, `availability_text`, `rating_text`, `description`, `source_page`, and `fetched_at`.
+3. **Canonical URL Identity**: Uses absolute HTTPS `product_url` as the canonical deduplication key.
+
+### Validation & Output Routing
+- **Valid Records**: Stored in `output/books.json` (exactly 60 unique records).
+- **Invalid Records**: Any record failing Zod validation is logged to `output/errors.json` along with issue details.
+
+### Idempotency
+Running the scraper multiple times maintains exact 60 unique valid records in `output/books.json` without introducing duplicate entries.
+
+### Stage 4 Checkpoint Result
+```text
+total_processed=60
+valid_records=60
+invalid_records=0
+books_json_count=60
+all_prices_numeric=true
+all_urls_https=true
 ```
 
 ---
