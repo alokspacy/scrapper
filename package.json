@@ -4,7 +4,8 @@
   "description": "The Polite Scraper - FlyRank Backend AI Engineering",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:failure": "node src/index.js --test-failure"
   },
   "keywords": [],
   "author": "",

@@ -116,9 +116,6 @@ const BookSchema = z.object({
 - **Valid Records**: Stored in `output/books.json` (exactly 60 unique records).
 - **Invalid Records**: Any record failing Zod validation is logged to `output/errors.json` along with issue details.
 
-### Idempotency
-Running the scraper multiple times maintains exact 60 unique valid records in `output/books.json` without introducing duplicate entries.
-
 ### Stage 4 Checkpoint Result
 ```text
 total_processed=60
@@ -131,14 +128,46 @@ all_urls_https=true
 
 ---
 
+## Stage 5 Documentation
+
+### Independent Failure Handling
+Each book URL is processed in an isolated `try...catch` block. A network or parsing error on a single URL will log a warning, record the failure, and allow the remaining books to complete without crashing the application.
+
+### Retry Policy
+- **Transient Errors & Timeouts (5xx, AbortError, Network Drop)**: Automatically retried **exactly once** after a 500 ms politeness pause.
+- **Why 404 & 403 Are NOT Retried**: HTTP 404 (Not Found) and HTTP 403 (Forbidden) indicate deterministic client/server permissions or resource absences. Retrying immediately will yield the same error while wasting server bandwidth.
+
+### Execution Run Report (`output/run-report.json`)
+The run report captures execution telemetry:
+- `start_time` & `end_time`: ISO timestamps marking run boundaries.
+- `duration_ms`: Total execution time in milliseconds.
+- `pages_fetched`: Count of live HTTP page requests made.
+- `cache_hits`: Count of pages retrieved directly from disk cache.
+- `valid_records`: Count of records passing Zod schema validation (saved in `output/books.json`).
+- `invalid_records`: Count of records failing validation (saved in `output/errors.json`).
+- `failed_pages_count` & `failed_pages`: Count and detailed array of failed page URLs and their error messages.
+
+### Controlled Failure Test Result (`npm run test:failure`)
+When executing with a deliberate controlled fake URL (`npm run test:failure`), the scraper:
+1. Attempted to fetch `https://fake-book-url.local/test-failure/index.html`.
+2. Retried once after 500 ms on initial failure.
+3. Logged the error and recorded `failed_pages_count: 1` in `output/run-report.json`.
+4. Successfully outputted all 60 valid records in `output/books.json` without crashing.
+
+### Honest Limitation
+This static HTML scraper depends on server-rendered HTML. Sites relying heavily on client-side Single Page Application (SPA) JavaScript rendering or Cloudflare CAPTCHA challenges are out of scope for pure HTTP fetchers and would require headless browser automation (Playwright/Puppeteer).
+
+---
+
 ## How to Run the Scraper
-Run the scraper using:
+Run standard scraper:
 ```bash
 npm start
 ```
-or
+
+Run controlled failure test:
 ```bash
-node src/index.js
+npm run test:failure
 ```
 
 ---

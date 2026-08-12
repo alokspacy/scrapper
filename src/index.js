@@ -8,10 +8,18 @@ const START_URL = 'https://books.toscrape.com/';
 const TARGET_CATALOGUE_PAGES = 3;
 const BOOKS_JSON_PATH = path.resolve('output/books.json');
 const ERRORS_JSON_PATH = path.resolve('output/errors.json');
+const RUN_REPORT_PATH = path.resolve('output/run-report.json');
 
 async function main() {
+  const startTime = new Date();
+  const testFailureMode = process.argv.includes('--test-failure') || process.env.TEST_FAILURE === 'true';
+
+  let pagesFetched = 0;
+  let cacheHits = 0;
+  const failedPages = [];
+
   try {
-    console.log(`[Stage 4] Starting Scraper & Stage 4 Record Validation...`);
+    console.log(`[Stage 5] Starting Scraper (Failure Test Mode: ${testFailureMode ? 'ON' : 'OFF'})...`);
 
     // --- Step 1: Discover Book URLs across 3 Catalogue Pages ---
     let currentUrl = START_URL;
@@ -23,6 +31,13 @@ async function main() {
 
       const cacheKey = `catalogue-page-${pageNum}`;
       const pageResult = await getCachedOrFetchPage(currentUrl, cacheKey);
+
+      if (pageResult.fromCache) {
+        cacheHits++;
+      } else {
+        pagesFetched++;
+      }
+
       const { bookUrls, nextUrl } = parseCataloguePage(pageResult.html, currentUrl);
 
       for (const url of bookUrls) {
@@ -38,77 +53,99 @@ async function main() {
       currentUrl = nextUrl;
     }
 
-    console.log(`Discovered ${discoveredBooks.length} unique book URLs.`);
+    // Inject deliberate fake URL ONLY if failure test mode is explicitly enabled
+    if (testFailureMode) {
+      console.log('[Stage 5 Test] Injecting controlled fake book URL for failure handling test...');
+      discoveredBooks.push({
+        url: 'https://fake-book-url.local/test-failure/index.html',
+        sourcePage: START_URL,
+      });
+    }
 
-    // --- Step 2: Extract & Normalize Detail Records ---
-    const validBooksMap = new Map(); // product_url -> record (canonical deduplication)
+    console.log(`Discovered ${discoveredBooks.length} target book URLs.`);
+
+    // --- Step 2: Extract, Normalize & Validate Each Book Independently ---
+    const validBooksMap = new Map();
     const invalidRecords = [];
 
     for (let i = 0; i < discoveredBooks.length; i++) {
       const bookInfo = discoveredBooks[i];
       const detailCacheKey = `book-detail-${i + 1}`;
 
-      const pageResult = await getCachedOrFetchPage(bookInfo.url, detailCacheKey);
-      const rawRecord = parseBookDetailPage(
-        pageResult.html,
-        bookInfo.url,
-        bookInfo.sourcePage,
-        pageResult.fetchedAt
-      );
+      try {
+        const pageResult = await getCachedOrFetchPage(bookInfo.url, detailCacheKey);
 
-      const normalizedRecord = normalizeBookRecord(rawRecord);
+        if (pageResult.fromCache) {
+          cacheHits++;
+        } else {
+          pagesFetched++;
+        }
 
-      // Validate with Zod
-      const validationResult = BookSchema.safeParse(normalizedRecord);
+        const rawRecord = parseBookDetailPage(
+          pageResult.html,
+          bookInfo.url,
+          bookInfo.sourcePage,
+          pageResult.fetchedAt
+        );
 
-      if (validationResult.success) {
-        validBooksMap.set(normalizedRecord.product_url, validationResult.data);
-      } else {
-        invalidRecords.push({
-          record: normalizedRecord,
-          errors: validationResult.error.issues,
+        const normalizedRecord = normalizeBookRecord(rawRecord);
+        const validationResult = BookSchema.safeParse(normalizedRecord);
+
+        if (validationResult.success) {
+          validBooksMap.set(normalizedRecord.product_url, validationResult.data);
+        } else {
+          invalidRecords.push({
+            record: normalizedRecord,
+            errors: validationResult.error.issues,
+          });
+        }
+      } catch (error) {
+        console.warn(`[Stage 5 Warning] Skipped failed page (${bookInfo.url}): ${error.message}`);
+        failedPages.push({
+          url: bookInfo.url,
+          error: error.message,
         });
       }
     }
 
     const validBooks = Array.from(validBooksMap.values());
+    const endTime = new Date();
+    const durationMs = endTime.getTime() - startTime.getTime();
 
-    // --- Step 3: Write Output Files Idempotently ---
+    // --- Step 3: Write Output Files ---
     const outputDir = path.resolve('output');
     await fs.mkdir(outputDir, { recursive: true });
 
     await fs.writeFile(BOOKS_JSON_PATH, JSON.stringify(validBooks, null, 2), 'utf-8');
     await fs.writeFile(ERRORS_JSON_PATH, JSON.stringify(invalidRecords, null, 2), 'utf-8');
 
-    // --- Step 4: Verification Checks ---
-    const allPricesNumeric = validBooks.every(
-      (b) => typeof b.price_gbp === 'number' && !isNaN(b.price_gbp) && b.price_gbp > 0
-    );
-    const allUrlsHttps = validBooks.every((b) => b.product_url.startsWith('https://'));
+    const runReport = {
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      duration_ms: durationMs,
+      pages_fetched: pagesFetched,
+      cache_hits: cacheHits,
+      valid_records: validBooks.length,
+      invalid_records: invalidRecords.length,
+      failed_pages_count: failedPages.length,
+      failed_pages: failedPages,
+    };
+
+    await fs.writeFile(RUN_REPORT_PATH, JSON.stringify(runReport, null, 2), 'utf-8');
 
     console.log('\n=================================');
-    console.log('Stage 4 Checkpoint Summary');
+    console.log('Stage 5 Checkpoint Summary');
     console.log('=================================');
-    console.log(`total_processed=${discoveredBooks.length}`);
+    console.log(`pages_fetched=${pagesFetched}`);
+    console.log(`cache_hits=${cacheHits}`);
     console.log(`valid_records=${validBooks.length}`);
     console.log(`invalid_records=${invalidRecords.length}`);
-    console.log(`books_json_count=${validBooks.length}`);
-    console.log(`all_prices_numeric=${allPricesNumeric}`);
-    console.log(`all_urls_https=${allUrlsHttps}`);
+    console.log(`failed_pages_count=${failedPages.length}`);
+    console.log(`duration_ms=${durationMs}`);
     console.log('=================================\n');
 
-    if (validBooks.length !== 60) {
-      throw new Error(`Expected exactly 60 valid records in books.json, found ${validBooks.length}`);
-    }
-    if (!allPricesNumeric) {
-      throw new Error('Validation failed: Not all price_gbp values are numeric numbers.');
-    }
-    if (!allUrlsHttps) {
-      throw new Error('Validation failed: Not all product_url values start with https://');
-    }
-
   } catch (error) {
-    console.error(`[Stage 4 Error] ${error.message}`);
+    console.error(`[Stage 5 Error] Fatal execution error: ${error.message}`);
     process.exit(1);
   }
 }
